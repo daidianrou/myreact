@@ -58,7 +58,7 @@ function loadStation() {
 }
 
 function saveStation(s) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); return true; } catch { return false; }
 }
 
 const isBuiltin = (u) => typeof u === 'string' && u.startsWith('builtin:');
@@ -306,12 +306,21 @@ function RadioPanel({ isDark, isAdmin, onClose }) {
   const webAudioRef = useRef(null);
   const modeRef = useRef(mode);
   const stationRef = useRef(station);
+  const saveFailedRef = useRef(false);
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
-  useEffect(() => { stationRef.current = station; saveStation(station); }, [station]);
+  useEffect(() => { 
+    stationRef.current = station; 
+    const ok = saveStation(station);
+    saveFailedRef.current = !ok;
+    if (!ok && !error) {
+      setError('存储空间不足，本地音乐无法持久保存。刷新后可能丢失，建议使用较小的音频文件或在线链接。');
+    }
+  }, [station]);
 
   useEffect(() => {
     const t = setInterval(() => {
+      if (saveFailedRef.current) return;
       const s = loadStation();
       setStation(prev => ({
         ...prev,
@@ -554,6 +563,14 @@ function RadioPanel({ isDark, isAdmin, onClose }) {
       return;
     }
 
+    // 检查文件大小（Base64 编码后约为原文件 1.37 倍，localStorage 通常限制 5-10MB）
+    const maxSize = 3 * 1024 * 1024; // 3MB 限制，留出 localStorage 其他数据的空间
+    if (file.size > maxSize) {
+      setError(`音频文件过大（${(file.size / 1024 / 1024).toFixed(1)}MB），localStorage 无法存储。请使用小于 3MB 的音频文件，或粘贴在线音乐链接。`);
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const base64Data = event.target.result;
@@ -607,6 +624,8 @@ function RadioPanel({ isDark, isAdmin, onClose }) {
       if (idx >= newQ.length) idx = Math.max(0, newQ.length - 1);
       return { ...s, [key]: newQ, currentIndex: idx };
     });
+    saveFailedRef.current = false;
+    setError('');
   };
 
   return (
